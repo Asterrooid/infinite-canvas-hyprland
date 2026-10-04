@@ -11,7 +11,7 @@ Transform your Hyprland desktop into a boundless whiteboard workspace with Figma
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
-  <img width="100%" alt="Infinite Canvas Hyprland Preview" src="https://github.com/user-attachments/assets/464fa371-7cc4-4fd5-a06c-55d7b51ba59d" />
+  <img width="100%" alt="Infinite Canvas Hyprland Preview" src="assets/preview.png" />
 </p>
 
 ---
