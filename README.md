@@ -1,4 +1,4 @@
-# Infinite Canvas Hyprland (Works on NixOS)
+# Infinite Canvas Hyprland
 
 Transform your Hyprland desktop into a boundless whiteboard workspace with Figma/Miro-style focal zoom, Socket2 auto-capture strip daemon, and smart tiling.
 
