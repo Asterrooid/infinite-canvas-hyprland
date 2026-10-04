@@ -115,6 +115,41 @@ def get_monitor_bounds():
         pass
     return {'left': 0, 'right': 1280, 'top': 0, 'bottom': 720, 'width': 1280, 'height': 720}
 
+def get_cursor_pos():
+    """Returns (x, y) coordinates of the mouse cursor in logical screen space, or None."""
+    try:
+        r = subprocess.run(['hyprctl', 'cursorpos', '-j'], capture_output=True, text=True, timeout=0.1)
+        cur = json.loads(r.stdout)
+        if cur and 'x' in cur and 'y' in cur:
+            return int(cur['x']), int(cur['y'])
+    except Exception:
+        pass
+    return None
+
+def get_monitor_for_cursor(cx, cy):
+    """Returns monitor bounds dict for the monitor containing cursor coordinates (cx, cy)."""
+    try:
+        r = subprocess.run(['hyprctl', 'monitors', '-j'], capture_output=True, text=True, timeout=0.1)
+        monitors = json.loads(r.stdout)
+        for m in monitors:
+            scale = m.get('scale', 1.0)
+            mx = m.get('x', 0)
+            my = m.get('y', 0)
+            mw = int(m['width'] / scale)
+            mh = int(m['height'] / scale)
+            if mx <= cx <= mx + mw and my <= cy <= my + mh:
+                return {
+                    'left': mx,
+                    'right': mx + mw,
+                    'top': my,
+                    'bottom': my + mh,
+                    'width': mw,
+                    'height': mh
+                }
+    except Exception:
+        pass
+    return get_monitor_bounds()
+
 def get_floating_windows(workspace_id):
     try:
         r = subprocess.run(['hyprctl', 'clients', '-j'], capture_output=True, text=True, timeout=0.1)
@@ -494,8 +529,12 @@ def device_manager():
         interval = WARMUP_INTERVAL if elapsed < WARMUP_DURATION else DEVICE_RESCAN_INTERVAL
         time.sleep(interval)
 
-def on_window_opened(new_addr):
+def on_window_opened(new_addr, initial_cursor=None, win_ws=None):
+    cursor_pos = initial_cursor or get_cursor_pos()
     time.sleep(0.08)
+    if cursor_pos is None:
+        cursor_pos = get_cursor_pos()
+
     try:
         state_file = get_state_file_path()
         if not os.path.exists(state_file):
@@ -503,51 +542,125 @@ def on_window_opened(new_addr):
         with open(state_file, "r") as f:
             state = json.load(f)
 
-        r = subprocess.run(['hyprctl', 'activeworkspace', '-j'], capture_output=True, text=True, timeout=0.1)
-        active_ws = json.loads(r.stdout)
-        active_id = str(active_ws.get("id"))
-
-        ws_state = state.get(active_id, {})
-        if ws_state.get("mode") != "canvas":
-            return
-
-        r = subprocess.run(['hyprctl', 'clients', '-j'], capture_output=True, text=True, timeout=0.1)
+        r = subprocess.run(['hyprctl', 'clients', '-j'], capture_output=True, text=True, timeout=0.2)
         clients = json.loads(r.stdout)
 
         new_win = next((c for c in clients if c["address"] == new_addr), None)
         if not new_win:
+            time.sleep(0.06)
+            r = subprocess.run(['hyprctl', 'clients', '-j'], capture_output=True, text=True, timeout=0.2)
+            clients = json.loads(r.stdout)
+            new_win = next((c for c in clients if c["address"] == new_addr), None)
+            if not new_win:
+                return
+
+        if win_ws is None:
+            raw_ws = new_win.get("workspace", {}).get("id")
+            win_ws = str(raw_ws) if raw_ws is not None else None
+
+        if win_ws is None:
+            r = subprocess.run(['hyprctl', 'activeworkspace', '-j'], capture_output=True, text=True, timeout=0.1)
+            active_ws = json.loads(r.stdout)
+            win_ws = str(active_ws.get("id"))
+
+        ws_key = str(win_ws)
+        ws_state = state.get(ws_key, {})
+        if ws_state.get("mode") != "canvas":
             return
 
-        exprs = []
+        # Ensure window is floating
         if not new_win.get("floating"):
-            exprs.append(toggle_floating_lua(new_addr))
+            subprocess.run(['hyprctl', 'dispatch', f'hl.dsp.window.float({{ action = "on", window = "address:{new_addr}" }})'],
+                           capture_output=True, timeout=0.2)
+            time.sleep(0.02)
 
-        mon = get_monitor_bounds()
-        card_w = min(585, mon["width"] - 70)
-        card_h = min(520, mon["height"] - 140)
-        gap = 40
-        margin_x = 35
-        margin_y = mon["top"] + (mon["height"] - card_h) // 2
+        mon = get_monitor_for_cursor(cursor_pos[0], cursor_pos[1]) if cursor_pos else get_monitor_bounds()
+        default_w = min(585, mon["width"] - 70)
+        default_h = min(520, mon["height"] - 140)
 
-        other_canvas = [c for c in clients if c.get("workspace", {}).get("id") == int(active_id) and c["address"] != new_addr]
+        other_canvas = [c for c in clients if str(c.get("workspace", {}).get("id")) == ws_key and c["address"] != new_addr]
         if other_canvas:
-            max_right = max(c["at"][0] + c["size"][0] for c in other_canvas)
-            next_x = max_right + gap
-            next_y = margin_y
+            sample_w = other_canvas[-1].get("size", [default_w, default_h])[0]
+            sample_h = other_canvas[-1].get("size", [default_w, default_h])[1]
+            if 200 <= sample_w <= mon["width"] and 150 <= sample_h <= mon["height"]:
+                card_w = sample_w
+                card_h = sample_h
+            else:
+                card_w = default_w
+                card_h = default_h
         else:
-            next_x = mon["left"] + margin_x
-            next_y = margin_y
+            card_w = default_w
+            card_h = default_h
 
-        exprs.append(resize_window_exact_lua(card_w, card_h, new_addr))
-        exprs.append(move_window_exact_lua(next_x, next_y, new_addr))
-        batch_async(exprs)
+        if cursor_pos:
+            cx, cy = cursor_pos
+            target_x = int(cx - card_w // 2)
+            target_y = int(cy - card_h // 2)
+
+            margin = 15
+            if mon["width"] > card_w + 2 * margin:
+                next_x = max(mon["left"] + margin, min(target_x, mon["right"] - card_w - margin))
+            else:
+                next_x = mon["left"]
+
+            if mon["height"] > card_h + 2 * margin:
+                next_y = max(mon["top"] + margin, min(target_y, mon["bottom"] - card_h - margin))
+            else:
+                next_y = mon["top"]
+        else:
+            gap = 40
+            margin_x = 35
+            margin_y = mon["top"] + (mon["height"] - card_h) // 2
+            if other_canvas:
+                max_right = max(c["at"][0] + c["size"][0] for c in other_canvas)
+                next_x = max_right + gap
+                next_y = margin_y
+            else:
+                next_x = mon["left"] + margin_x
+                next_y = margin_y
+
+        cmd = (f"dispatch hl.dsp.window.resize({{ window = 'address:{new_addr}', x = {int(card_w)}, y = {int(card_h)}, relative = false }}) ; "
+               f"dispatch hl.dsp.window.move({{ window = 'address:{new_addr}', x = {int(next_x)}, y = {int(next_y)}, relative = false }})")
+        subprocess.run(["hyprctl", "--batch", cmd], capture_output=True, timeout=1.0)
+        time.sleep(0.04)
+        subprocess.run(["hyprctl", "dispatch", f"hl.dsp.window.move({{ window = 'address:{new_addr}', x = {int(next_x)}, y = {int(next_y)}, relative = false }})"],
+                       capture_output=True, timeout=0.5)
 
         if "positions" not in ws_state:
             ws_state["positions"] = {}
-        ws_state["positions"][new_addr] = {"x": next_x, "y": next_y, "w": card_w, "h": card_h}
+        ws_state["positions"][new_addr] = {
+            "x": next_x,
+            "y": next_y,
+            "w": card_w,
+            "h": card_h,
+            "class": new_win.get("class", ""),
+            "title": new_win.get("title", "")
+        }
         with open(state_file, "w") as f:
             json.dump(state, f, indent=2)
-        print(f"[hypr-canvas] Auto-captured new window {new_addr} into Infinite Canvas at ({next_x}, {next_y})", flush=True)
+        print(f"[hypr-canvas] Auto-captured new window {new_addr} into Infinite Canvas at cursor ({next_x}, {next_y})", flush=True)
+    except Exception as e:
+        print(f"[hypr-canvas] Error in on_window_opened: {e}", flush=True)
+
+
+def on_window_closed(closed_addr):
+    try:
+        state_file = get_state_file_path()
+        if not os.path.exists(state_file):
+            return
+        with open(state_file, "r") as f:
+            state = json.load(f)
+
+        modified = False
+        for ws_id, ws_state in state.items():
+            if isinstance(ws_state, dict) and "positions" in ws_state:
+                if closed_addr in ws_state["positions"]:
+                    del ws_state["positions"][closed_addr]
+                    modified = True
+
+        if modified:
+            with open(state_file, "w") as f:
+                json.dump(state, f, indent=2)
     except Exception:
         pass
 
@@ -588,7 +701,13 @@ def socket2_listener():
                         if parts:
                             raw_addr = parts[0].strip()
                             addr = raw_addr if raw_addr.startswith("0x") else f"0x{raw_addr}"
-                            threading.Thread(target=on_window_opened, args=(addr,), daemon=True).start()
+                            win_ws = parts[1].strip() if len(parts) > 1 else None
+                            cur = get_cursor_pos()
+                            threading.Thread(target=on_window_opened, args=(addr, cur, win_ws), daemon=True).start()
+                    elif line.startswith("closewindow>>"):
+                        raw_addr = line[len("closewindow>>"):].strip()
+                        addr = raw_addr if raw_addr.startswith("0x") else f"0x{raw_addr}"
+                        threading.Thread(target=on_window_closed, args=(addr,), daemon=True).start()
         except Exception:
             time.sleep(1)
 

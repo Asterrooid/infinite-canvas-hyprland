@@ -107,3 +107,21 @@ def resize_window_exact_lua(w, h, address):
 
 def resize_window_exact(w, h, address, timeout=2):
     return dispatch(resize_window_exact_lua(w, h, address), timeout=timeout)
+
+
+def set_floating_lua(address=None, enabled=True):
+    action = "on" if enabled else "off"
+    w = f', window = "address:{address}"' if address else ""
+    return f'hl.dsp.window.float({{ action = "{action}"{w} }})'
+
+
+def get_cursor_pos(timeout=0.2):
+    """Returns (x, y) coordinates of the mouse cursor in logical screen space, or None."""
+    try:
+        cur = hyprctl_json(["cursorpos"], timeout=timeout)
+        if cur and isinstance(cur, dict) and "x" in cur and "y" in cur:
+            return int(cur["x"]), int(cur["y"])
+    except Exception:
+        pass
+    return None
+

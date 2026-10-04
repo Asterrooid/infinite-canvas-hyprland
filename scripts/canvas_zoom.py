@@ -12,7 +12,7 @@ import subprocess
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hypr_ipc import (hyprctl_json, move_window_exact_lua, resize_window_exact_lua,
-                      batch_async, get_state_file_path)
+                      batch_async, get_state_file_path, get_cursor_pos)
 
 STATE_FILE = get_state_file_path()
 ZOOM_FACTOR_IN = 1.15
@@ -26,11 +26,9 @@ MAX_HEIGHT = 680
 
 def get_focal_point():
     # Try mouse cursor position first
-    cur = hyprctl_json(["cursorpos"])
-    if cur and "x" in cur and "y" in cur:
-        # Check if cursor is on valid screen bounds
-        if cur["x"] > 0 and cur["y"] > 0:
-            return cur["x"], cur["y"]
+    cur = get_cursor_pos()
+    if cur and (cur[0] > 0 or cur[1] > 0):
+        return cur[0], cur[1]
 
     # Fallback to monitor center
     monitors = hyprctl_json(["monitors"]) or []

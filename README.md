@@ -1,6 +1,6 @@
 # Infinite Canvas Hyprland
 
-Transform your Hyprland desktop into a boundless whiteboard workspace with Figma/Miro-style focal zoom, Socket2 auto-capture strip daemon, and smart tiling.
+Transform your Hyprland desktop into a boundless whiteboard workspace with Figma/Miro-style focal zoom, cursor-targeted app summoning, Socket2 auto-capture daemon, and smart tiling.
 
 [![Hyprland 0.55+](https://img.shields.io/badge/Hyprland-0.55%2B%20(Lua)-00A3E0?style=for-the-badge&logo=hyprland&logoColor=white)](https://hyprland.org)
 [![NixOS](https://img.shields.io/badge/NixOS-Supported-5277C3?style=for-the-badge&logo=nixos&logoColor=white)](https://nixos.org)
@@ -19,7 +19,7 @@ Transform your Hyprland desktop into a boundless whiteboard workspace with Figma
 ## 🚀 Features
 
 - 🔍 **Figma/Miro Canvas Zoom**: Focal-point zoom in, zoom out, and reset centered directly on your mouse cursor.
-- ⚡ **Socket2 Auto-Capture Daemon**: Listens to Hyprland's IPC event stream in real time; opening new windows while in Canvas Mode automatically sizes them as cards and appends them to the canvas strip.
+- ⚡ **Socket2 Auto-Capture Daemon**: Listens to Hyprland's IPC event stream in real time; summoning new apps while in Canvas Mode automatically formats them as cards and places them directly at your mouse cursor.
 - 📐 **Smart Strip Layout Engine**: Replaces messy overlapping window stacks with clean, non-overlapping horizontal card strips with 40px gaps.
 - 🖥️ **Fractional HiDPI Display Scaling**: Fixed monitor bounds calculation (`width/scale`, `height/scale`) for smooth panning on scaled laptop and 4K displays.
 - 🔄 **Instant Tiled <-> Canvas Toggle**: One key shortcut (`SUPER + D`) flips between traditional tiling and Infinite Canvas without losing your window layout.
@@ -189,7 +189,7 @@ Special thanks to **Sarods2D** for creating the foundational concept and initial
 
 This repository is an enhanced, independent evolution developed by **Asterrooid**, engineered to provide:
 - Figma/Miro-style focal cursor zoom (`canvas_zoom.py`)
-- Real-time Socket2 IPC event stream auto-capture daemon for dynamic card insertion
+- Real-time Socket2 IPC cursor-targeted auto-capture daemon for dynamic card insertion
 - Smart non-overlapping horizontal strip layout engine
 - Fractional HiDPI display scaling support for laptop and 4K displays
 - Native NixOS declarative and Flake architecture
