@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 move_window.py
-Mueve la ventana flotante activa 50px en la dirección indicada.
-Si toca el borde del monitor, empuja las demás ventanas en sentido contrario.
+Moves the active floating window in the indicated direction.
+If it reaches the monitor edge, pushes neighboring windows in the opposite direction.
 
-Uso: python3 move_window.py <left|right|up|down>
+Usage: python3 move_window.py <left|right|up|down>
 """
 
 import subprocess
@@ -21,13 +21,25 @@ def get_monitor_bounds():
     monitors = hyprctl_json(["monitors"]) or []
     for m in monitors:
         if m.get("focused"):
+            scale = m.get("scale", 1.0)
             return {
                 "left":   m["x"],
-                "right":  m["x"] + m["width"],
+                "right":  m["x"] + int(m["width"] / scale),
                 "top":    m["y"],
-                "bottom": m["y"] + m["height"],
+                "bottom": m["y"] + int(m["height"] / scale),
+                "scale":  scale,
             }
-    return {"left": 0, "right": 1920, "top": 0, "bottom": 1080}
+    if monitors:
+        m = monitors[0]
+        scale = m.get("scale", 1.0)
+        return {
+            "left":   m["x"],
+            "right":  m["x"] + int(m["width"] / scale),
+            "top":    m["y"],
+            "bottom": m["y"] + int(m["height"] / scale),
+            "scale":  scale,
+        }
+    return {"left": 0, "right": 1920, "top": 0, "bottom": 1080, "scale": 1.0}
 
 
 def get_floating_windows(workspace_id):
@@ -40,7 +52,7 @@ def get_floating_windows(workspace_id):
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] not in ("left", "right", "up", "down"):
-        print("Uso: move_window.py <left|right|up|down>")
+        print("Usage: move_window.py <left|right|up|down>")
         sys.exit(1)
 
     direction = sys.argv[1]
@@ -68,7 +80,7 @@ def main():
     new_x = wx + dx
     new_y = wy + dy
 
-    # Calcular cuánto espacio real queda antes del borde
+    # Calculate actual remaining distance to monitor edge
     if dx < 0:
         room = wx - monitor["left"]
         actual_dx = -min(STEP, room)
@@ -90,10 +102,10 @@ def main():
     hitting_edge = (actual_dx != dx) or (actual_dy != dy)
 
     if hitting_edge:
-        # Mover la ventana exactamente hasta el borde
+        # Move window directly to the edge boundary
         if actual_dx != 0 or actual_dy != 0:
             dispatch(move_window_exact_lua(wx + actual_dx, wy + actual_dy, addr))
-        # Empujar las demás con el paso completo en sentido contrario
+        # Push neighboring windows in opposite direction
         others = [w for w in get_floating_windows(workspace_id) if w["address"] != addr]
         exprs = []
         for w in others:
@@ -102,7 +114,7 @@ def main():
             exprs.append(move_window_exact_lua(ox, oy, w["address"]))
         batch_async(exprs)
     else:
-        # Sin borde: mover solo la ventana activa el paso completo
+        # No edge collision: move active window full step
         dispatch(move_window_exact_lua(new_x, new_y, addr))
 
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 navigate_windows.py
-Navega entre ventanas del workspace activo usando Super+flechas.
+Navigates between windows on the active workspace using Super + Arrows.
 
-- Flotante: mueve todas las ventanas para centrar la objetivo (infinite canvas)
-- Tileado master: movefocus l/r/u/d
-- Tileado dwindle: movefocus left/right/up/down
+- Floating: Pans all windows to center the target window (infinite canvas)
+- Tiled master: movefocus l/r/u/d
+- Tiled dwindle: movefocus left/right/up/down
 
-Uso: python3 navigate_windows.py <left|right|up|down>
+Usage: python3 navigate_windows.py <left|right|up|down>
 """
 
 import subprocess
@@ -25,8 +25,8 @@ DIR_SHORT = {"left": "l", "right": "r", "up": "u", "down": "d"}
 
 
 def movefocus(direction):
-    # La wiki documenta el selector de direccion de hl.dsp.focus como l/r/u/d
-    # sin importar el layout.
+    # Hyprland wiki documents direction selector for hl.dsp.focus as l/r/u/d
+    # regardless of layout.
     move_focus(DIR_SHORT[direction])
 
 
@@ -34,8 +34,17 @@ def get_monitor_center():
     monitors = hyprctl_json(["monitors"]) or []
     for m in monitors:
         if m.get("focused"):
-            return m["x"] + m["width"] // 2, m["y"] + m["height"] // 2
-    return 960, 540
+            scale = m.get("scale", 1.0)
+            lw = int(m["width"] / scale)
+            lh = int(m["height"] / scale)
+            return m["x"] + lw // 2, m["y"] + lh // 2
+    if monitors:
+        m = monitors[0]
+        scale = m.get("scale", 1.0)
+        lw = int(m["width"] / scale)
+        lh = int(m["height"] / scale)
+        return m["x"] + lw // 2, m["y"] + lh // 2
+    return 640, 360
 
 
 def get_window_center(w):
@@ -132,7 +141,7 @@ def pan_to_window(floating, target_addr, center_x, center_y):
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] not in ("left", "right", "up", "down"):
-        print("Uso: navigate_windows.py <left|right|up|down>")
+        print("Usage: navigate_windows.py <left|right|up|down>")
         sys.exit(1)
 
     direction = sys.argv[1]
@@ -146,12 +155,12 @@ def main():
     ws_clients = [w for w in clients if w.get("workspace", {}).get("id") == workspace_id]
     floating = [w for w in ws_clients if w.get("floating")]
 
-    # ── modo mosaico ──────────────────────────────────────────────────────────
+    # ── Tiled mode ──────────────────────────────────────────────────────────
     if not floating:
         movefocus(direction)
         return
 
-    # ── modo flotante ──────────────────────────────────────
+    # ── Floating mode ──────────────────────────────────────
     if len(floating) <= 1:
         return
 

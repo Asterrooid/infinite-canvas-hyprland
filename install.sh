@@ -1,0 +1,1 @@
+install-hyprland-infinite-desktop.sh

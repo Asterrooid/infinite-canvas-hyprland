@@ -1,0 +1,37 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Logs and runtime state
+*.log
+*.tmp
+*.bak*
+floating_tile_state*.json
+hypr_infinite_state*.json
+
+# Nix build outputs & direnv
+result
+result-*
+.direnv/
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Secrets & credentials (anti-leak protection)
+.env
+.env.*
+*.pem
+*.key

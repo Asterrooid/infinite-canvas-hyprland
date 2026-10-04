@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
-# im in love with-
+# Infinite Canvas Hyprland Installer
+# Seamless installer for infinite canvas panning, navigation, and zoom tools.
 #
 set -euo pipefail
 
-REPO_URL="https://github.com/sarodscommits/hyprland-infinitie-desktop-v2"
-REPO_TARBALL="https://codeload.github.com/sarodscommits/hyprland-infinitie-desktop-v2/tar.gz/refs/heads/main"
+REPO_URL="https://github.com/Asterrooid/infinite-canvas-hyprland"
+REPO_TARBALL="https://codeload.github.com/Asterrooid/infinite-canvas-hyprland/tar.gz/refs/heads/main"
 SCRIPTS_DEST="${HOME}/scripts"
 HYPR_LUA="${HOME}/.config/hypr/hyprland.lua"
 TMP_DIR="$(mktemp -d)"
@@ -24,9 +25,11 @@ require_cmd() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# sh1t over trash
+# 1. Package Installation & Verification
+IS_NIXOS=0
+
 install_packages() {
-    log "Detecting distro and installing required packages (python, python-evdev, bash, jq)..."
+    log "Detecting distro and verifying required packages (python, python-evdev, bash, jq)..."
 
     if [ -f /etc/os-release ]; then
         # shellcheck disable=SC1091
@@ -38,65 +41,110 @@ install_packages() {
         DISTRO_LIKE=""
     fi
 
-    if [[ "$DISTRO_ID" == "arch" || "$DISTRO_LIKE" == *arch* ]]; then
+    if [ "$DISTRO_ID" = "nixos" ] || [ -f /etc/NIXOS ] || [[ "$DISTRO_LIKE" == *nixos* ]]; then
+        IS_NIXOS=1
+        local nixos_missing=0
+
+        if ! python3 -c "import evdev" >/dev/null 2>&1; then
+            nixos_missing=1
+        fi
+        if ! command -v jq >/dev/null 2>&1; then
+            nixos_missing=1
+        fi
+        if ! (groups "$USER" 2>/dev/null || groups) | grep -qw input; then
+            nixos_missing=1
+        fi
+
+        if [ "$nixos_missing" -eq 1 ]; then
+            warn "NixOS detected with missing dependencies or permissions!"
+            echo ""
+            echo -e "${C_CYAN}==>${C_RESET} NixOS detected! To enable required system packages and permissions, ensure your /etc/nixos/configuration.nix includes:
+     environment.systemPackages = with pkgs; [
+       (python3.withPackages (ps: with ps; [ evdev ]))
+       jq
+     ];
+     users.users.${USER}.extraGroups = [ \"input\" ];
+Then run: sudo nixos-rebuild switch"
+            echo ""
+        else
+            ok "NixOS dependencies verified (python-evdev, jq, input group)."
+        fi
+    elif [[ "$DISTRO_ID" == "arch" || "$DISTRO_LIKE" == *arch* ]]; then
         sudo pacman -S --needed --noconfirm python python-evdev bash jq
+        ok "Packages installed (or already present)."
     elif [[ "$DISTRO_ID" == "fedora" || "$DISTRO_LIKE" == *fedora* ]]; then
         sudo dnf install -y python python-evdev bash jq
+        ok "Packages installed (or already present)."
     elif [[ "$DISTRO_ID" == "ubuntu" || "$DISTRO_ID" == "debian" || "$DISTRO_LIKE" == *debian* ]]; then
-        sudo apt update
-        sudo apt install -y python3 python3-evdev bash jq
+        sudo apt update && sudo apt install -y python3 python3-evdev bash jq
+        ok "Packages installed (or already present)."
     else
         warn "Could not automatically recognize your distro (ID=$DISTRO_ID)."
         warn "Please install manually: python3, python-evdev, bash, jq"
     fi
-    ok "Packages installed (or already present)."
 }
 
-
-# 2. "input" group membership (required by python-evdev and a lot of things)
-
+# 2. "input" group membership (required by evdev for mouse/keyboard capture)
 setup_input_group() {
-    log "Adding your user (${USER}) to the 'input' group..."
-    if groups "$USER" | grep -qw input; then
-        ok "Your user already belongs to the 'input' group."
+    log "Checking user (${USER}) membership in the 'input' group..."
+    if (groups "$USER" 2>/dev/null || groups) | grep -qw input; then
+        ok "User '${USER}' already belongs to the 'input' group."
     else
-        sudo usermod -aG input "$USER"
-        warn "User added to the 'input' group. You must LOG OUT (or reboot) for this to take effect."
-        NEED_RELOGIN=1
+        if [ "${IS_NIXOS:-0}" -eq 1 ]; then
+            warn "User '${USER}' does not belong to the 'input' group."
+            warn "On NixOS, group membership is declarative. Ensure /etc/nixos/configuration.nix includes:"
+            warn "  users.users.${USER}.extraGroups = [ \"input\" ];"
+            warn "Then run: sudo nixos-rebuild switch"
+        else
+            log "Adding user (${USER}) to the 'input' group..."
+            sudo usermod -aG input "$USER"
+            warn "User added to the 'input' group. You must LOG OUT (or reboot) for this to take effect."
+            NEED_RELOGIN=1
+        fi
     fi
 }
 
-
-# 3. Download the repo and copy the shtty scripts
-
+# 3. Download the repository and copy scripts
 fetch_and_install_scripts() {
-    log "Downloading the repository..."
-    if ! curl -fsSL -o "${TMP_DIR}/repo.tar.gz" "${REPO_TARBALL}"; then
-        err "Could not download the repo from ${REPO_TARBALL}"
-        err "Check your connection or download it manually: ${REPO_URL}"
-        exit 1
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    if [ -d "${SCRIPT_DIR}/scripts" ]; then
+        log "Found local scripts directory at ${SCRIPT_DIR}/scripts. Installing scripts..."
+        mkdir -p "${SCRIPTS_DEST}"
+        find "${SCRIPT_DIR}/scripts" -maxdepth 1 -type f \( -name "*.py" -o -name "*.sh" \) -print0 |
+            while IFS= read -r -d '' f; do
+                cp -f "$f" "${SCRIPTS_DEST}/"
+                ok "Copied: $(basename "$f")"
+            done
+    else
+        log "Downloading the repository from ${REPO_TARBALL}..."
+        if ! curl -fsSL -o "${TMP_DIR}/repo.tar.gz" "${REPO_TARBALL}"; then
+            err "Could not download the repo from ${REPO_TARBALL}"
+            err "Check your connection or download it manually: ${REPO_URL}"
+            exit 1
+        fi
+
+        mkdir -p "${TMP_DIR}/repo"
+        tar -xzf "${TMP_DIR}/repo.tar.gz" -C "${TMP_DIR}/repo" --strip-components=1
+
+        if [ ! -d "${TMP_DIR}/repo/scripts" ]; then
+            err "Could not find the 'scripts' folder inside the downloaded repo."
+            exit 1
+        fi
+
+        log "Creating ${SCRIPTS_DEST} and copying files..."
+        mkdir -p "${SCRIPTS_DEST}"
+
+        find "${TMP_DIR}/repo/scripts" -maxdepth 1 -type f \( -name "*.py" -o -name "*.sh" \) -print0 |
+            while IFS= read -r -d '' f; do
+                cp -f "$f" "${SCRIPTS_DEST}/"
+                ok "Copied: $(basename "$f")"
+            done
     fi
-
-    mkdir -p "${TMP_DIR}/repo"
-    tar -xzf "${TMP_DIR}/repo.tar.gz" -C "${TMP_DIR}/repo" --strip-components=1
-
-    if [ ! -d "${TMP_DIR}/repo/scripts" ]; then
-        err "Could not find the 'scripts' folder inside the downloaded repo."
-        exit 1
-    fi
-
-    log "Creating ${SCRIPTS_DEST} and copying files..."
-    mkdir -p "${SCRIPTS_DEST}"
-
-    # Copy all .py and .sh files for nothing
-    find "${TMP_DIR}/repo/scripts" -maxdepth 1 -type f \( -name "*.py" -o -name "*.sh" \) -print0 |
-        while IFS= read -r -d '' f; do
-            cp -f "$f" "${SCRIPTS_DEST}/"
-            ok "Copied: $(basename "$f")"
-        done
 
     log "Applying execute permissions..."
     chmod +x \
+        "${SCRIPTS_DEST}/canvas_zoom.py" \
         "${SCRIPTS_DEST}/infinite-desktop.sh" \
         "${SCRIPTS_DEST}/floating_tile_toggle.py" \
         "${SCRIPTS_DEST}/move_window_tiled.py" \
@@ -104,22 +152,21 @@ fetch_and_install_scripts() {
         "${SCRIPTS_DEST}/resize_window.py" \
         "${SCRIPTS_DEST}/move_window.py" \
         "${SCRIPTS_DEST}/infinite_desktop_core.py" \
+        "${SCRIPTS_DEST}/hypr_ipc.py" \
         2>/dev/null || true
 
-    # discover_hyprland_api.sh is an optional diagnostic utility from the repo
     [ -f "${SCRIPTS_DEST}/discover_hyprland_api.sh" ] && chmod +x "${SCRIPTS_DEST}/discover_hyprland_api.sh"
 
     ok "Scripts installed in ${SCRIPTS_DEST}"
 }
 
-# 4.  Now patch hyprland.lua (autostart + binds, with conflict reassignment)
-
+# 4. Patch hyprland.lua (autostart + keybinds, with conflict resolution)
 patch_hyprland_config() {
     log "Updating ${HYPR_LUA} (autostart + keybinds)..."
     mkdir -p "$(dirname "${HYPR_LUA}")"
 
-    python3 "${TMP_DIR}/patch_hyprland.py" "${HYPR_LUA}" "${SCRIPTS_DEST}"
-    STATUS=$?
+    STATUS=0
+    python3 "${TMP_DIR}/patch_hyprland.py" "${HYPR_LUA}" "${SCRIPTS_DEST}" || STATUS=$?
 
     if [ "$STATUS" -eq 3 ]; then
         warn "hyprland.lua was not modified (already installed before)."
@@ -140,7 +187,6 @@ MARK_START = "-- >>> hyprland-infinite-desktop-v2 (auto-installed) START"
 MARK_END   = "-- <<< hyprland-infinite-desktop-v2 (auto-installed) END"
 
 # Alternative key ladders to try on collision (in order of preference).
-# For arrow keys, if SUPER+arrow is already taken, fall back to vim-style keys.
 FALLBACK = {
     "Z": ["Z", "COMMA", "MINUS", "F13"],
     "X": ["X", "PERIOD", "EQUAL", "F14"],
@@ -149,6 +195,9 @@ FALLBACK = {
     "right": ["right", "L"],
     "up": ["up", "K"],
     "down": ["down", "J"],
+    "0": ["0", "KP_0", "grave"],
+    "mouse_down": ["mouse_down"],
+    "mouse_up": ["mouse_up"],
 }
 
 def norm_key(k):
@@ -170,6 +219,11 @@ for d in ["left", "right", "up", "down"]:
     add(f"movetiled_{d}", ["MOD", "ALT"], d, '{mod} .. " + ALT + {key}", hl.dsp.exec_cmd("python3 ~/scripts/move_window_tiled.py ' + d + '")', f"Move tiled window ({d})")
     add(f"movefloat_{d}", ["MOD", "SHIFT"], d, '{mod} .. " + SHIFT + {key}", hl.dsp.exec_cmd("python3 ~/scripts/move_window.py ' + d + '"), {{ repeating = true }}', f"Move floating window ({d})")
     add(f"resize_{d}", ["MOD", "CTRL"], d, '{mod} .. " + CTRL + {key}", hl.dsp.exec_cmd("python3 ~/scripts/resize_window.py ' + d + '"), {{ repeating = true }}', f"Resize window ({d})")
+
+# Canvas Zoom In / Out / Reset
+add("canvas_zoom_out", ["MOD", "CTRL"], "mouse_down", '{mod} .. " + CTRL + {key}", hl.dsp.exec_cmd("python3 ~/scripts/canvas_zoom.py out")', "Zoom out canvas")
+add("canvas_zoom_in", ["MOD", "CTRL"], "mouse_up", '{mod} .. " + CTRL + {key}", hl.dsp.exec_cmd("python3 ~/scripts/canvas_zoom.py in")', "Zoom in canvas")
+add("canvas_zoom_reset", ["MOD", "CTRL"], "0", '{mod} .. " + CTRL + {key}", hl.dsp.exec_cmd("python3 ~/scripts/canvas_zoom.py reset")', "Reset canvas zoom")
 
 def read_file(path):
     if not os.path.exists(path):
@@ -203,14 +257,15 @@ def first_call_arg(line, call_idx_end):
 
 def extract_existing_signatures(content):
     """
-    Normalized signature (frozenset of mods+key) for every existing
-    hl.bind()/bind() call, using only its first argument (the key
-    combination). Assumes one bind() call per line (the usual pattern
-    in hyprland.lua).
+    Normalized signature (frozenset of mods+key) for every active
+    hl.bind()/bind() call, ignoring comments.
     """
     mainmod = detect_mainmod(content)
     sigs = {}
     for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("--"):
+            continue
         m = re.search(r'\bbind\(', line)
         if not m:
             continue
@@ -243,7 +298,7 @@ def resolve_binds(content):
     for b in BINDS:
         candidates = FALLBACK.get(b["basekey"], [b["basekey"]])
         picked = None
-        picked_mods = b["mods"]
+        picked_mods = list(b["mods"])
         for cand in candidates:
             sig = build_signature(b["mods"], cand, mainmod)
             if sig not in used_sigs:
@@ -251,14 +306,18 @@ def resolve_binds(content):
                 used_sigs.add(sig)
                 break
         if picked is None:
-            for extra in ["ALT", "SHIFT", "CTRL"]:
-                cand = candidates[0]
-                sig = build_signature(b["mods"] + [extra], cand, mainmod)
-                if sig not in used_sigs:
-                    picked = cand
-                    picked_mods = b["mods"] + [extra]
-                    used_sigs.add(sig)
-                    break
+            # Special keys like mouse wheel should not have arbitrary modifier shifts
+            if b["basekey"] not in ["mouse_down", "mouse_up"]:
+                for extra in ["ALT", "SHIFT", "CTRL"]:
+                    if extra in b["mods"]:
+                        continue
+                    cand = candidates[0]
+                    sig = build_signature(b["mods"] + [extra], cand, mainmod)
+                    if sig not in used_sigs:
+                        picked = cand
+                        picked_mods = b["mods"] + [extra]
+                        used_sigs.add(sig)
+                        break
         if picked is None:
             picked = candidates[0]
         if norm_key(picked) != norm_key(b["basekey"]) or picked_mods != b["mods"]:
@@ -267,12 +326,12 @@ def resolve_binds(content):
 
     return chosen, mainmod, remapped_report
 
-def render_lines(chosen, mainmod):
+def render_lines(chosen, mainmod, use_mainmod_var=True):
     lines = []
     final_desc = []
+    mod_literal = "mainMod" if use_mainmod_var else f'"{mainmod}"'
     for b in BINDS:
         mods, key = chosen[b["id"]]
-        mod_literal = f'"{mainmod}"'
         line = "hl.bind(" + b["action_tpl"].format(mod=mod_literal, key=key) + ")"
         lines.append(line)
         combo_parts = [mainmod if m == "MOD" else m for m in mods]
@@ -284,7 +343,7 @@ def main():
     content = read_file(HYPR_LUA)
     os.makedirs(os.path.dirname(HYPR_LUA), exist_ok=True)
 
-    if MARK_START in content:
+    if MARK_START in content or "-- >>> hyprland-infinite-desktop-v2 START" in content:
         print("WARNING: a block installed previously by this script already exists in hyprland.lua.")
         print("The file was not modified. Remove the block manually if you want to reinstall.")
         sys.exit(3)
@@ -294,8 +353,9 @@ def main():
         with open(backup, "w", encoding="utf-8") as f:
             f.write(content)
 
+    has_mainmod_var = bool(re.search(r'\blocal\s+mainMod\s*=', content))
     chosen, mainmod, remapped = resolve_binds(content)
-    bind_lines, final_desc = render_lines(chosen, mainmod)
+    bind_lines, final_desc = render_lines(chosen, mainmod, use_mainmod_var=has_mainmod_var)
 
     autostart_block = (
         '    hl.on("hyprland.start", function()\n'
@@ -335,11 +395,11 @@ if __name__ == "__main__":
 PYEOF
 }
 
-# main
+# Main Execution Flow
 
 NEED_RELOGIN=0
 
-echo -e "${C_BOLD}hyprland-infinite-desktop-v2 installer${C_RESET}"
+echo -e "${C_BOLD}Infinite Canvas Hyprland Installer${C_RESET}"
 echo "Repo: ${REPO_URL}"
 echo ""
 

@@ -2,6 +2,20 @@
 
 import subprocess
 import json
+import os
+
+
+def get_state_file_path():
+    """Prefers $XDG_RUNTIME_DIR/hypr_infinite_state.json, fallback to
+    /tmp/floating_tile_state_<uid>.json, fallback to /tmp/floating_tile_state.json."""
+    xdg = os.environ.get("XDG_RUNTIME_DIR")
+    if xdg and os.path.isdir(xdg):
+        return os.path.join(xdg, "hypr_infinite_state.json")
+    try:
+        uid = os.getuid()
+        return f"/tmp/floating_tile_state_{uid}.json"
+    except Exception:
+        return "/tmp/floating_tile_state.json"
 
 
 def _run(args, timeout=2):
@@ -9,16 +23,13 @@ def _run(args, timeout=2):
 
 
 def hyprctl_json(args, timeout=2):
-    """Llamadas de solo lectura (clients, activewindow, monitors, etc).
-    Estas NO pasan por el parser de dispatch, siguen funcionando igual
-    que antes en Lua config."""
+    """Read-only queries (clients, activewindow, monitors, etc.) returning parsed JSON."""
     r = _run(args + ["-j"], timeout=timeout)
     return json.loads(r.stdout) if r.stdout.strip() else None
 
 
 def dispatch(lua_expr, timeout=2):
-    """Ejecuta hyprctl dispatch '<lua_expr>'.
-    lua_expr debe ser una llamada completa a hl.dsp.*(...)"""
+    """Executes hyprctl dispatch '<lua_expr>' where lua_expr is an hl.dsp.*(...) call."""
     return _run(["dispatch", lua_expr], timeout=timeout)
 
 
@@ -28,7 +39,8 @@ def dispatch_async(lua_expr):
 
 
 def batch(lua_exprs, timeout=5):
-    """lua_exprs: lista de llamadas completas a hl.dsp.*(...)"""
+    """Executes multiple hyprctl dispatch expressions in batch.
+    lua_exprs: list of complete calls to hl.dsp.*(...)"""
     cmd = " ; ".join(f"dispatch {e}" for e in lua_exprs)
     return subprocess.run(["hyprctl", "--batch", cmd], capture_output=True, timeout=timeout)
 

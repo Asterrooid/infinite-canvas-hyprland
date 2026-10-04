@@ -1,155 +1,201 @@
-# hyprland-infinite-desktop-v2
-A powerful script to transform your Hyprland workspace into an "infinite" canvas. This tool allows you to pan all floating windows simultaneously using your mouse and navigate between them with keyboard shortcuts, creating a dynamic and boundless desktop experience.
-<img width="1920" height="1080" alt="20260509_18h26m44s_grim" src="https://github.com/user-attachments/assets/464fa371-7cc4-4fd5-a06c-55d7b51ba59d" />
+# Infinite Canvas Hyprland (Works on NixOS)
 
+Transform your Hyprland desktop into a boundless whiteboard workspace with Figma/Miro-style focal zoom, Socket2 auto-capture strip daemon, and smart tiling.
+
+[![Hyprland 0.55+](https://img.shields.io/badge/Hyprland-0.55%2B%20(Lua)-00A3E0?style=for-the-badge&logo=hyprland&logoColor=white)](https://hyprland.org)
+[![NixOS](https://img.shields.io/badge/NixOS-Supported-5277C3?style=for-the-badge&logo=nixos&logoColor=white)](https://nixos.org)
+[![Arch Linux](https://img.shields.io/badge/Arch_Linux-Supported-1793D1?style=for-the-badge&logo=arch-linux&logoColor=white)](https://archlinux.org)
+[![Fedora](https://img.shields.io/badge/Fedora-Supported-51A2DA?style=for-the-badge&logo=fedora&logoColor=white)](https://getfedora.org)
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-Supported-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)](https://ubuntu.com)
+[![Python 3](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+
+<p align="center">
+  <img width="100%" alt="Infinite Canvas Hyprland Preview" src="https://github.com/user-attachments/assets/464fa371-7cc4-4fd5-a06c-55d7b51ba59d" />
+</p>
+
+---
 
 ## 🚀 Features
 
--Infinite Panning: Move the entire "canvas" of floating windows by holding a modifier combination and moving your mouse.
+- 🔍 **Figma/Miro Canvas Zoom**: Focal-point zoom in, zoom out, and reset centered directly on your mouse cursor.
+- ⚡ **Socket2 Auto-Capture Daemon**: Listens to Hyprland's IPC event stream in real time; opening new windows while in Canvas Mode automatically sizes them as cards and appends them to the canvas strip.
+- 📐 **Smart Strip Layout Engine**: Replaces messy overlapping window stacks with clean, non-overlapping horizontal card strips with 40px gaps.
+- 🖥️ **Fractional HiDPI Display Scaling**: Fixed monitor bounds calculation (`width/scale`, `height/scale`) for smooth panning on scaled laptop and 4K displays.
+- 🔄 **Instant Tiled <-> Canvas Toggle**: One key shortcut (`SUPER + D`) flips between traditional tiling and Infinite Canvas without losing your window layout.
+- 🧭 **Center & Directional Navigation**: `SUPER + Arrow Keys` smoothly navigates focus and centers cards in your viewport.
 
--Smart Navigation: Cycle focus between floating windows
+---
 
-## New features
+## ⌨️ Keybinding Cheat Sheet
 
--Now works in LUA (Hyprland 0.55+).
+| Keybinding | Action | Description |
+| :--- | :--- | :--- |
+| `SUPER + D` | Toggle Tiled <-> Canvas | Flips between traditional tiled layout and Infinite Canvas strip |
+| `SUPER + ALT + Mouse Drag` | Pan Entire Canvas | Pan across the infinite canvas smoothly |
+| `SUPER + Left Click Drag` | Drag Window | Drag floating window (viewport auto-pans at screen edges) |
+| `SUPER + CTRL + Scroll Up` | Canvas Zoom In | Focal zoom in centered directly on mouse cursor |
+| `SUPER + CTRL + Scroll Down` | Canvas Zoom Out | Focal zoom out centered directly on mouse cursor |
+| `SUPER + CTRL + 0` | Reset Canvas Zoom | Reset card sizes to 100% standard dimensions |
+| `SUPER + Arrow Keys` | Focus & Center Window | Navigate focus and center window in viewport |
+| `SUPER + SHIFT + Arrow Keys` | Move Floating Window | Fine-tune floating card position |
+| `SUPER + CTRL + Arrow Keys` | Resize Window | Resize focused window |
+| `SUPER + ALT + Arrow Keys` | Move Tiled Window | Swap or reorder window in standard tiled layout |
+| `SUPER + Z / X` | Switch Workspaces | Cycle to previous or next workspace |
 
--Toggle tiling floating/layout.
+---
 
--Rezize and move windows without mouse.
+## 📦 Installation & Setup
 
--Better navigation.
+**Automated Installer (All Distros)**:
 
+Run the 1-click automated installer to install dependencies, copy scripts to `~/scripts`, configure user permissions, and update your configuration:
 
-## 📥 Installation
+```bash
+git clone https://github.com/Asterrooid/infinite-canvas-hyprland.git
+cd infinite-canvas-hyprland
+chmod +x install.sh
+./install.sh
+```
 
-# Automatic:
+---
 
-1. **Download the file named "Install hyprland infinite desktop" into the "~/" directory (Home/USER/).**
-   
-2. **Run the following commands:**
-   ```bash
-   chmod +x install-hyprland-infinite-desktop.sh
-   ```
+**NixOS Support**:
 
-   ```bash
-   ./install-hyprland-infinite-desktop.sh
-   ```
+Infinite Canvas Hyprland runs seamlessly on NixOS. You can configure it declaratively or run it directly using Nix Flakes.
 
-3. **Read the changes in hyprland.lua carefully (they are printed at the end of the script).**
+**Option 1: Declarative Configuration (`/etc/nixos/configuration.nix`)**
 
-4. **Reboot your system**
+Add required system packages and ensure your user belongs to the `input` group (needed for mouse evdev tracking):
 
+```nix
+environment.systemPackages = with pkgs; [
+  (python3.withPackages (ps: with ps; [ evdev ]))
+  jq
+];
+users.users.<username>.extraGroups = [ "input" ];
+```
 
-# Manual:
+Rebuild your system:
+```bash
+sudo nixos-rebuild switch
+```
 
-1. **Requirements**
-   You need Python 3, jq, bash, python-evdev installed on your system.
+**Option 2: Native Nix Flake**
 
-   ### Installation by Distribution:
+Run directly without manual dependency management:
 
-   * **Arch Linux:**
-     ```bash
-     sudo pacman -S python python-evdev bash jq
-     ```
+```bash
+nix run github:Asterrooid/infinite-canvas-hyprland
+```
 
-   *For Fedora or Debian-based distributions, make sure you have the latest version of Hyprland compiled or installed.*
+---
 
-   * **Fedora:**
-     ```bash
-     sudo dnf install python python-evdev bash jq
-     ```
-   * **Ubuntu / Debian:**
-     ```bash
-     sudo apt install python python-evdev bash jq
-     ```
+**Traditional Distros (Manual Setup)**:
 
-2. **Permissions**
+Install the required packages (`python3`, `python-evdev`, `bash`, `jq`):
 
-   Add your user to the group:
-   ```bash
-   sudo usermod -aG input $USER
-   ```
+- **Arch Linux:**
+  ```bash
+  sudo pacman -S python python-evdev bash jq
+  ```
 
-   Restart your session:
-   ```bash
-   sudo reboot
-   ```
+- **Fedora:**
+  ```bash
+  sudo dnf install python3 python3-evdev bash jq
+  ```
 
-3. **Create the directory:**
-   All scripts must be stored in a dedicated folder in your home directory:
-   ```bash
-   mkdir -p ~/scripts
-   ```
-4. **Download the scripts:**
-   Place all scripts (.py and .sh) inside ~/scripts/
+- **Ubuntu / Debian:**
+  ```bash
+  sudo apt install python3 python3-evdev bash jq
+  ```
 
-5. **Grant execution permissions:**
-   ```bash
-   chmod +x ~/scripts/infinite-desktop.sh ~/scripts/floating_tile_toggle.py ~/scripts/move_window_tiled.py ~/scripts/navigate_windows.py ~/scripts/resize_window.py
-   ```
+**Configure User Permissions**:
+Add your user account to the `input` group so the core daemon can read mouse gestures:
+```bash
+sudo usermod -aG input $USER
+```
+*(Note: Log out and back in, or reboot your machine for group changes to take effect.)*
 
-## ⚙️ Configuration (for manual installation)
-Add the following lines to your ~/.config/hypr/hyprland.lua:
+**Install Scripts**:
+```bash
+mkdir -p ~/scripts
+cp scripts/* ~/scripts/
+chmod +x ~/scripts/*.py ~/scripts/*.sh
+```
 
-1. **Auto-start**
-   ```bash
-    hl.on("hyprland.start", function()
-        hl.exec_cmd("python3 ~/scripts/infinite_desktop_core.py 1.6 > /tmp/infinite-desktop.log 2>&1")
-   end)
-   ```
-2. **Keybindings**
-   Add these binds to enable keyboard navigation between your floating windows:
-   
-   ***(if you already have a bind that uses one of the required keys or for workspaces, replace them)***
-   ```bash
+---
 
+## ⚙️ Hyprland Configuration
 
-   local mainMod = "SUPER"
+Add the daemon autostart and keybindings to your Hyprland configuration (`~/.config/hypr/hyprland.lua`):
 
-   -- Workspaces
-   hl.bind(mainMod .. " + Z", hl.dsp.focus({ workspace = "-1" }))
-   hl.bind(mainMod .. " + X", hl.dsp.focus({ workspace = "+1" }))
-   hl.bind(mainMod .. " + SHIFT + Z", hl.dsp.window.move({ workspace = "-1" }))
-   hl.bind(mainMod .. " + SHIFT + X", hl.dsp.window.move({ workspace = "+1" }))
+**1. Daemon Autostart**
 
-   -- Infinite desktop 
-   hl.bind(mainMod .. " + D", hl.dsp.exec_cmd("python3 ~/scripts/floating_tile_toggle.py"))
+```lua
+-- Autostart Infinite Canvas Daemon (Socket2 IPC & Pan Engine)
+hl.on("hyprland.start", function()
+    hl.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/infinite_desktop_core.py 1.6 > /tmp/infinite-desktop.log 2>&1")
+end)
+```
 
-   hl.bind(mainMod .. " + left",  hl.dsp.exec_cmd("python3 ~/scripts/navigate_windows.py left"))
-   hl.bind(mainMod .. " + right", hl.dsp.exec_cmd("python3 ~/scripts/navigate_windows.py right"))
-   hl.bind(mainMod .. " + up",    hl.dsp.exec_cmd("python3 ~/scripts/navigate_windows.py up"))
-   hl.bind(mainMod .. " + down",  hl.dsp.exec_cmd("python3 ~/scripts/navigate_windows.py down"))
+**2. Keybindings**
 
-   hl.bind(mainMod .. " + ALT + left",  hl.dsp.exec_cmd("python3 ~/scripts/move_window_tiled.py left"))
-   hl.bind(mainMod .. " + ALT + right", hl.dsp.exec_cmd("python3 ~/scripts/move_window_tiled.py right"))
-   hl.bind(mainMod .. " + ALT + up",    hl.dsp.exec_cmd("python3 ~/scripts/move_window_tiled.py up"))
-   hl.bind(mainMod .. " + ALT + down",  hl.dsp.exec_cmd("python3 ~/scripts/move_window_tiled.py down"))
+```lua
+local mainMod = "SUPER"
 
-   hl.bind(mainMod .. " + SHIFT + left",  hl.dsp.exec_cmd("python3 ~/scripts/move_window.py left"),  { repeating = true })
-   hl.bind(mainMod .. " + SHIFT + right", hl.dsp.exec_cmd("python3 ~/scripts/move_window.py right"), { repeating = true })
-   hl.bind(mainMod .. " + SHIFT + up",    hl.dsp.exec_cmd("python3 ~/scripts/move_window.py up"),    { repeating = true })
-   hl.bind(mainMod .. " + SHIFT + down",  hl.dsp.exec_cmd("python3 ~/scripts/move_window.py down"),  { repeating = true })
+-- Workspace Navigation
+hl.bind(mainMod .. " + Z", hl.dsp.focus({ workspace = "-1" }))
+hl.bind(mainMod .. " + X", hl.dsp.focus({ workspace = "+1" }))
+hl.bind(mainMod .. " + SHIFT + Z", hl.dsp.window.move({ workspace = "-1" }))
+hl.bind(mainMod .. " + SHIFT + X", hl.dsp.window.move({ workspace = "+1" }))
 
-   hl.bind(mainMod .. " + CTRL + left",  hl.dsp.exec_cmd("python3 ~/scripts/resize_window.py left"),  {    repeating = true })
-   hl.bind(mainMod .. " + CTRL + right", hl.dsp.exec_cmd("python3 ~/scripts/resize_window.py right"), { repeating = true })
-   hl.bind(mainMod .. " + CTRL + up",    hl.dsp.exec_cmd("python3 ~/scripts/resize_window.py up"),    { repeating = true })
-   hl.bind(mainMod .. " + CTRL + down",  hl.dsp.exec_cmd("python3 ~/scripts/resize_window.py down"),  { repeating = true })
-   ```
+-- Toggle Tiled <-> Canvas Mode
+hl.bind(mainMod .. " + D", hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/floating_tile_toggle.py"))
 
-## 🖱️ How to use
+-- Figma/Miro Canvas Focal Zoom
+hl.bind(mainMod .. " + CTRL + mouse_up", hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/canvas_zoom.py in"))
+hl.bind(mainMod .. " + CTRL + mouse_down", hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/canvas_zoom.py out"))
+hl.bind(mainMod .. " + CTRL + 0", hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/canvas_zoom.py reset"))
 
- **Workspaces:** Press ***SUPER + Z or X*** to change of workspaces.
- 
- **Panning:** Hold ***SUPER + ALT*** and move your mouse to slide the entire desktop.
- 
- **Navigation:** Press ***SUPER + Arrow Keys*** to center and focus the next floating/tiled window.
- 
- **Toggle floating/layout:** Press ***SUPER + D*** to toggle all windows floating/mosaic.
+-- Navigation & Centering
+hl.bind(mainMod .. " + left",  hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/navigate_windows.py left"))
+hl.bind(mainMod .. " + right", hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/navigate_windows.py right"))
+hl.bind(mainMod .. " + up",    hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/navigate_windows.py up"))
+hl.bind(mainMod .. " + down",  hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/navigate_windows.py down"))
 
- **Toggle floating/layout:** Press ***SUPER + V*** ti toggle one window flotating/mosaic.
+-- Window Adjustments (Floating & Tiled)
+hl.bind(mainMod .. " + SHIFT + left",  hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/move_window.py left"),  { repeating = true })
+hl.bind(mainMod .. " + SHIFT + right", hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/move_window.py right"), { repeating = true })
+hl.bind(mainMod .. " + SHIFT + up",    hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/move_window.py up"),    { repeating = true })
+hl.bind(mainMod .. " + SHIFT + down",  hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/move_window.py down"),  { repeating = true })
 
- **Rezize window:** Press/hold ***CTRL + SUPER + Arrow Keys*** to rezize windows.
+hl.bind(mainMod .. " + CTRL + left",  hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/resize_window.py left"),  { repeating = true })
+hl.bind(mainMod .. " + CTRL + right", hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/resize_window.py right"), { repeating = true })
+hl.bind(mainMod .. " + CTRL + up",    hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/resize_window.py up"),    { repeating = true })
+hl.bind(mainMod .. " + CTRL + down",  hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/resize_window.py down"),  { repeating = true })
 
- **Move windows:** Press/hold ***SHIFT + SUPER + Arrow Keys*** to move windows on floating.
+hl.bind(mainMod .. " + ALT + left",  hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/move_window_tiled.py left"))
+hl.bind(mainMod .. " + ALT + right", hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/move_window_tiled.py right"))
+hl.bind(mainMod .. " + ALT + up",    hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/move_window_tiled.py up"))
+hl.bind(mainMod .. " + ALT + down",  hl.dsp.exec_cmd("python3 " .. os.getenv("HOME") .. "/scripts/move_window_tiled.py down"))
+```
 
- **Move tiled windows:** Press ***SUPER + ALT + Arrow Keys*** yo move tiled windows.
+---
+
+## 🤝 Attribution & Credits
+
+Special thanks to **Sarods2D** for creating the foundational concept and initial implementation of the infinite desktop in [`sarodscommits/hyprland-infinitie-desktop-v2`](https://github.com/sarodscommits/hyprland-infinitie-desktop-v2).
+
+This repository is an enhanced, independent evolution developed by **Asterrooid**, engineered to provide:
+- Figma/Miro-style focal cursor zoom (`canvas_zoom.py`)
+- Real-time Socket2 IPC event stream auto-capture daemon for dynamic card insertion
+- Smart non-overlapping horizontal strip layout engine
+- Fractional HiDPI display scaling support for laptop and 4K displays
+- Native NixOS declarative and Flake architecture
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

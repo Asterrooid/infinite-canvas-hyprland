@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-
+"""
+floating_tile_toggle.py - Intelligent Infinite Canvas Toggle Engine
+Converts all windows on the active workspace into a clean, zoomed-out, non-overlapping
+infinite canvas grid, or returns them to standard tiling.
+"""
 
 import subprocess
 import json
@@ -9,58 +13,76 @@ import fcntl
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hypr_ipc import (hyprctl_json, toggle_floating_lua, move_window_exact_lua,
-                       resize_window_exact_lua, batch)
+                      resize_window_exact_lua, batch, get_state_file_path)
 
-LOCK_FILE  = "/tmp/floating_tile_toggle.lock"
-STATE_FILE = "/tmp/floating_tile_state.json"
 
+def get_lock_file_path():
+    xdg = os.environ.get("XDG_RUNTIME_DIR")
+    if xdg and os.path.isdir(xdg):
+        return os.path.join(xdg, "floating_tile_toggle.lock")
+    try:
+        return f"/tmp/floating_tile_toggle_{os.getuid()}.lock"
+    except Exception:
+        return "/tmp/floating_tile_toggle.lock"
+
+
+LOCK_FILE = get_lock_file_path()
+STATE_FILE = get_state_file_path()
 
 
 def load_state():
     try:
-        with open(STATE_FILE) as f:
+        with open(STATE_FILE, "r") as f:
             return json.load(f)
     except Exception:
         return {}
 
-def save_state(state):
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
 
-def clear_state(workspace_id):
-    state = load_state()
-    state.pop(str(workspace_id), None)
-    save_state(state)
+def save_state(state):
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        print(f"⚠️ Error saving state: {e}")
+
+
+def get_monitor_info():
+    monitors = hyprctl_json(["monitors"]) or []
+    for m in monitors:
+        if m.get("focused"):
+            scale = m.get("scale", 1.0)
+            return {
+                "x": m.get("x", 0),
+                "y": m.get("y", 0),
+                "w": int(m.get("width", 1920) / scale),
+                "h": int(m.get("height", 1080) / scale),
+                "scale": scale
+            }
+    if monitors:
+        m = monitors[0]
+        scale = m.get("scale", 1.0)
+        return {
+            "x": m.get("x", 0),
+            "y": m.get("y", 0),
+            "w": int(m.get("width", 1920) / scale),
+            "h": int(m.get("height", 1080) / scale),
+            "scale": scale
+        }
+    return {"x": 0, "y": 0, "w": 1280, "h": 720, "scale": 1.5}
 
 
 def get_active_workspace():
     ws = hyprctl_json(["activeworkspace"])
     return ws["id"] if ws else None
 
-def get_floating_windows(workspace_id):
+
+def get_workspace_windows(workspace_id):
     clients = hyprctl_json(["clients"]) or []
-    return [
-        w for w in clients
-        if w.get("floating") and w.get("workspace", {}).get("id") == workspace_id
-    ]
+    return [w for w in clients if w.get("workspace", {}).get("id") == workspace_id]
 
-def get_tiled_windows(workspace_id, saved_addresses):
-    """Ventanas que estaban flotantes antes (guardadas) y ahora son tileadas."""
-    clients = hyprctl_json(["clients"]) or []
-    return [
-        w for w in clients
-        if not w.get("floating")
-        and w.get("workspace", {}).get("id") == workspace_id
-        and w["address"] in saved_addresses
-    ]
 
-def tile_floating_windows(workspace_id):
-    """Guarda posiciones y pone en mosaico todas las flotantes del workspace."""
-    windows = get_floating_windows(workspace_id)
-    if not windows:
-        print("No hay ventanas flotantes en el workspace activo.")
-        return False
-
+def switch_to_tiled(workspace_id, windows, state):
+    ws_key = str(workspace_id)
     positions = {}
     for w in windows:
         positions[w["address"]] = {
@@ -72,120 +94,123 @@ def tile_floating_windows(workspace_id):
             "title": w.get("title", ""),
         }
 
-    state = load_state()
-    state[str(workspace_id)] = positions
+    state[ws_key] = {
+        "mode": "tiled",
+        "positions": positions
+    }
     save_state(state)
 
-    print(f"Guardadas {len(positions)} ventanas. Tileando...")
-
-    exprs = [toggle_floating_lua(addr) for addr in positions]
-    batch(exprs, timeout=5)
-
-    return True
-
-def restore_floating_windows(workspace_id):
-    """Restaura ventanas a flotante y las mueve a sus posiciones guardadas."""
-    state = load_state()
-    positions = state.get(str(workspace_id))
-
-    if not positions:
-        print("No hay posiciones guardadas para este workspace.")
-        return False
-
-    # Obtener ventanas que deben restaurarse
-    tiled = get_tiled_windows(workspace_id, set(positions.keys()))
-
-    if not tiled:
-        clients = hyprctl_json(["clients"]) or []
-        tiled = [
-            w for w in clients
-            if w.get("workspace", {}).get("id") == workspace_id
-            and w["address"] in positions
-        ]
-
-    print(f"Restaurando {len(tiled)} ventanas a flotante...")
-
-    toggle_exprs = [toggle_floating_lua(w["address"]) for w in tiled if not w.get("floating")]
-    if toggle_exprs:
-        batch(toggle_exprs, timeout=5)
-
-    move_exprs = []
-    for w in tiled:
-        addr = w["address"]
-        pos = positions.get(addr)
-        if not pos:
-            continue
-        x, y = pos["x"], pos["y"]
-        w2, h2 = pos.get("w"), pos.get("h")
-        move_exprs.append(move_window_exact_lua(x, y, addr))
-        if w2 and h2:
-            move_exprs.append(resize_window_exact_lua(w2, h2, addr))
-        print(f"  ✓ {pos.get('class', addr)} -> ({x}, {y}) [{w2}x{h2}]")
-
-    if move_exprs:
-        batch(move_exprs, timeout=5)
-
-    clear_state(workspace_id)
+    print(f"📦 Switching {len(windows)} windows to Tiled Mode...")
+    exprs = [toggle_floating_lua(w["address"]) for w in windows if w.get("floating")]
+    if exprs:
+        batch(exprs, timeout=5)
     return True
 
 
-def is_tiled_state(workspace_id):
-    """Determina si el workspace está en estado mosaico (hay posiciones guardadas)."""
-    state = load_state()
-    return str(workspace_id) in state
+def switch_to_canvas(workspace_id, windows, state):
+    ws_key = str(workspace_id)
+    mon = get_monitor_info()
 
+    # 1. Float any window that is currently tiled
+    tiled_windows = [w for w in windows if not w.get("floating")]
+    if tiled_windows:
+        float_exprs = [toggle_floating_lua(w["address"]) for w in tiled_windows]
+        batch(float_exprs, timeout=5)
 
-# qwertyuiop
+    n_windows = len(windows)
+    if n_windows == 0:
+        return True
 
-def float_all_tiled(workspace_id):
-    """Pone flotantes todas las ventanas tileadas del workspace, sin mover."""
-    clients = hyprctl_json(["clients"]) or []
-    tiled = [
-        w for w in clients
-        if not w.get("floating")
-        and w.get("workspace", {}).get("id") == workspace_id
-    ]
+    # 2. Compute "Zoom Out" non-overlapping Canvas Layout
+    layout_exprs = []
+    positions = {}
 
-    if not tiled:
-        print("No hay ventanas tileadas en el workspace activo.")
-        return False
+    if n_windows == 1:
+        card_w = min(960, mon["w"] - 100)
+        card_h = min(560, mon["h"] - 120)
+        x = mon["x"] + (mon["w"] - card_w) // 2
+        y = mon["y"] + (mon["h"] - card_h) // 2
+        w = windows[0]
+        layout_exprs.append(resize_window_exact_lua(card_w, card_h, w["address"]))
+        layout_exprs.append(move_window_exact_lua(x, y, w["address"]))
+        positions[w["address"]] = {"x": x, "y": y, "w": card_w, "h": card_h}
 
-    print(f"Poniendo {len(tiled)} ventanas en flotante...")
-    exprs = [toggle_floating_lua(w["address"]) for w in tiled]
-    batch(exprs, timeout=5)
+    elif n_windows == 2:
+        gap = 40
+        margin_x = 35
+        card_w = (mon["w"] - 2 * margin_x - gap) // 2
+        card_h = min(520, mon["h"] - 140)
+        margin_y = mon["y"] + (mon["h"] - card_h) // 2
 
+        for idx, w in enumerate(windows):
+            x = mon["x"] + margin_x + idx * (card_w + gap)
+            y = margin_y
+            layout_exprs.append(resize_window_exact_lua(card_w, card_h, w["address"]))
+            layout_exprs.append(move_window_exact_lua(x, y, w["address"]))
+            positions[w["address"]] = {"x": x, "y": y, "w": card_w, "h": card_h}
+
+    else:
+        # 3 or more windows: Infinite strip layout with 2 apps visible on initial screen
+        gap = 40
+        margin_x = 35
+        card_w = (mon["w"] - 2 * margin_x - gap) // 2
+        card_h = min(520, mon["h"] - 140)
+        margin_y = mon["y"] + (mon["h"] - card_h) // 2
+
+        for idx, w in enumerate(windows):
+            x = mon["x"] + margin_x + idx * (card_w + gap)
+            y = margin_y
+            layout_exprs.append(resize_window_exact_lua(card_w, card_h, w["address"]))
+            layout_exprs.append(move_window_exact_lua(x, y, w["address"]))
+            positions[w["address"]] = {"x": x, "y": y, "w": card_w, "h": card_h}
+
+    if layout_exprs:
+        batch(layout_exprs, timeout=5)
+
+    state[ws_key] = {
+        "mode": "canvas",
+        "positions": positions
+    }
+    save_state(state)
+    print(f"🚀 Canvas Mode activated for {n_windows} windows (Zoom-out layout applied).")
     return True
 
 
 def main():
-
     lock_fd = open(LOCK_FILE, "w")
     try:
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        print("Otra instancia ya está corriendo, ignorando.")
+        print("⚠️ Another instance is running, skipping.")
         sys.exit(0)
 
     try:
         workspace_id = get_active_workspace()
         if workspace_id is None:
-            print("Error: no se pudo obtener el workspace activo.")
             sys.exit(1)
 
-        if is_tiled_state(workspace_id):
+        windows = get_workspace_windows(workspace_id)
+        if not windows:
+            print("ℹ️ No windows on active workspace.")
+            return
 
-            restore_floating_windows(workspace_id)
+        state = load_state()
+        ws_info = state.get(str(workspace_id), {})
+        current_mode = ws_info.get("mode", "tiled")
+        all_floating = all(w.get("floating") for w in windows)
+
+        # Toggle logic:
+        # If currently recorded as canvas AND all windows are floating -> switch to tiled
+        # Otherwise -> switch to canvas!
+        if current_mode == "canvas" and all_floating:
+            switch_to_tiled(workspace_id, windows, state)
         else:
-            floating = get_floating_windows(workspace_id)
-            if floating:
+            switch_to_canvas(workspace_id, windows, state)
 
-                tile_floating_windows(workspace_id)
-            else:
-
-                float_all_tiled(workspace_id)
     finally:
         fcntl.flock(lock_fd, fcntl.LOCK_UN)
         lock_fd.close()
+
 
 if __name__ == "__main__":
     main()
