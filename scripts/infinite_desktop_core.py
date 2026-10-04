@@ -6,8 +6,9 @@ import math
 from evdev import InputDevice, list_devices, ecodes
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from hypr_ipc import (move_window_exact_lua, batch_async, toggle_floating_lua,
-                      resize_window_exact_lua, get_state_file_path)
+from hypr_ipc import (move_window_exact_lua, batch_async,
+                      resize_window_exact_lua, get_state_file_path,
+                      set_floating_lua, get_cursor_pos)
 
 # Device paths are auto-detected by capabilities.
 # Usage: infinite_desktop_core.py [speed]
@@ -114,17 +115,6 @@ def get_monitor_bounds():
     except:
         pass
     return {'left': 0, 'right': 1280, 'top': 0, 'bottom': 720, 'width': 1280, 'height': 720}
-
-def get_cursor_pos():
-    """Returns (x, y) coordinates of the mouse cursor in logical screen space, or None."""
-    try:
-        r = subprocess.run(['hyprctl', 'cursorpos', '-j'], capture_output=True, text=True, timeout=0.1)
-        cur = json.loads(r.stdout)
-        if cur and 'x' in cur and 'y' in cur:
-            return int(cur['x']), int(cur['y'])
-    except Exception:
-        pass
-    return None
 
 def get_monitor_for_cursor(cx, cy):
     """Returns monitor bounds dict for the monitor containing cursor coordinates (cx, cy)."""
@@ -570,7 +560,7 @@ def on_window_opened(new_addr, initial_cursor=None, win_ws=None):
 
         # Ensure window is floating
         if not new_win.get("floating"):
-            subprocess.run(['hyprctl', 'dispatch', f'hl.dsp.window.float({{ action = "on", window = "address:{new_addr}" }})'],
+            subprocess.run(['hyprctl', 'dispatch', set_floating_lua(new_addr, enabled=True)],
                            capture_output=True, timeout=0.2)
             time.sleep(0.02)
 
@@ -619,12 +609,12 @@ def on_window_opened(new_addr, initial_cursor=None, win_ws=None):
                 next_x = mon["left"] + margin_x
                 next_y = margin_y
 
-        cmd = (f"dispatch hl.dsp.window.resize({{ window = 'address:{new_addr}', x = {int(card_w)}, y = {int(card_h)}, relative = false }}) ; "
-               f"dispatch hl.dsp.window.move({{ window = 'address:{new_addr}', x = {int(next_x)}, y = {int(next_y)}, relative = false }})")
+        resize_expr = resize_window_exact_lua(int(card_w), int(card_h), new_addr)
+        move_expr = move_window_exact_lua(int(next_x), int(next_y), new_addr)
+        cmd = f"dispatch {resize_expr} ; dispatch {move_expr}"
         subprocess.run(["hyprctl", "--batch", cmd], capture_output=True, timeout=1.0)
         time.sleep(0.04)
-        subprocess.run(["hyprctl", "dispatch", f"hl.dsp.window.move({{ window = 'address:{new_addr}', x = {int(next_x)}, y = {int(next_y)}, relative = false }})"],
-                       capture_output=True, timeout=0.5)
+        subprocess.run(["hyprctl", "dispatch", move_expr], capture_output=True, timeout=0.5)
 
         if "positions" not in ws_state:
             ws_state["positions"] = {}

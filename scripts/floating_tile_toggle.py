@@ -12,7 +12,7 @@ import os
 import fcntl
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from hypr_ipc import (hyprctl_json, toggle_floating_lua, move_window_exact_lua,
+from hypr_ipc import (hyprctl_json, set_floating_lua, toggle_floating_lua, move_window_exact_lua,
                       resize_window_exact_lua, batch, get_state_file_path)
 
 
@@ -101,7 +101,7 @@ def switch_to_tiled(workspace_id, windows, state):
     save_state(state)
 
     print(f"📦 Switching {len(windows)} windows to Tiled Mode...")
-    exprs = [toggle_floating_lua(w["address"]) for w in windows if w.get("floating")]
+    exprs = [set_floating_lua(w["address"], enabled=False) for w in windows if w.get("floating")]
     if exprs:
         batch(exprs, timeout=5)
     return True
@@ -114,7 +114,7 @@ def switch_to_canvas(workspace_id, windows, state):
     # 1. Float any window that is currently tiled
     tiled_windows = [w for w in windows if not w.get("floating")]
     if tiled_windows:
-        float_exprs = [toggle_floating_lua(w["address"]) for w in tiled_windows]
+        float_exprs = [set_floating_lua(w["address"], enabled=True) for w in tiled_windows]
         batch(float_exprs, timeout=5)
 
     n_windows = len(windows)
