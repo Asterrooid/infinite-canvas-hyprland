@@ -353,7 +353,7 @@ def move_active_window(direction):
 
 
 def classify_device(path):
-    """Returns 'mouse', 'keyboard', or None based on actual device capabilities,
+    """Returns 'mouse', 'touchpad', 'keyboard', or None based on actual device capabilities,
     regardless of brand or device name."""
     try:
         dev = InputDevice(path)
@@ -364,10 +364,7 @@ def classify_device(path):
 
     keys = set(caps.get(ecodes.EV_KEY, []))
     rels = set(caps.get(ecodes.EV_REL, []))
-
-    is_mouse = (ecodes.REL_X in rels and ecodes.REL_Y in rels and ecodes.BTN_LEFT in keys)
-    if is_mouse:
-        return 'mouse'
+    abss = set(x[0] if isinstance(x, tuple) else x for x in caps.get(ecodes.EV_ABS, []))
 
     # A real keyboard features full alphanumeric keys and Meta keys.
     # This filters out consumer/system control interfaces.
@@ -378,18 +375,33 @@ def classify_device(path):
     if is_keyboard:
         return 'keyboard'
 
+    # Touchpad features absolute X/Y (or MT position) and touch/finger buttons
+    is_touchpad = (
+        (ecodes.ABS_X in abss or ecodes.ABS_MT_POSITION_X in abss)
+        and (ecodes.ABS_Y in abss or ecodes.ABS_MT_POSITION_Y in abss)
+        and (ecodes.BTN_TOUCH in keys or ecodes.BTN_TOOL_FINGER in keys)
+    )
+    if is_touchpad:
+        return 'touchpad'
+
+    is_mouse = (ecodes.REL_X in rels and ecodes.REL_Y in rels and ecodes.BTN_LEFT in keys)
+    if is_mouse:
+        return 'mouse'
+
     return None
 
 
 def scan_devices():
-    keyboards, mice = [], []
+    keyboards, mice, touchpads = [], [], []
     for path in list_devices():
         kind = classify_device(path)
         if kind == 'mouse':
             mice.append(path)
+        elif kind == 'touchpad':
+            touchpads.append(path)
         elif kind == 'keyboard':
             keyboards.append(path)
-    return keyboards, mice
+    return keyboards, mice, touchpads
 
 
 def kbd_reader_device(path):
@@ -483,11 +495,96 @@ def mouse_reader_device(path):
             pass
 
 
+def touchpad_reader_device(path):
+    """Reads input events from a single touchpad device (EV_ABS)."""
+    global acc_x, acc_y, btn_left, mouse_rel_x, mouse_rel_y
+    try:
+        fd = open(path, 'rb')
+    except Exception:
+        return
+
+    current_slot = 0
+    slot0_active = False
+    touch_down = False
+    cur_x = None
+    cur_y = None
+    last_x = None
+    last_y = None
+
+    try:
+        while True:
+            try:
+                data = fd.read(EVENT_SIZE)
+            except Exception:
+                break
+            if not data or len(data) < EVENT_SIZE:
+                break
+            _, _, etype, code, value = struct.unpack('llHHi', data)
+
+            if etype == EV_KEY:
+                if code == BTN_LEFT:
+                    with lock:
+                        btn_left = (value == 1)
+                elif code == ecodes.BTN_TOUCH:
+                    touch_down = (value == 1)
+                    if not touch_down:
+                        last_x = None
+                        last_y = None
+
+            elif etype == ecodes.EV_ABS:
+                if code == ecodes.ABS_MT_SLOT:
+                    current_slot = value
+                elif code == ecodes.ABS_MT_TRACKING_ID and current_slot == 0:
+                    if value == -1:
+                        slot0_active = False
+                        last_x = None
+                        last_y = None
+                    else:
+                        slot0_active = True
+                elif current_slot == 0:
+                    if code in (ecodes.ABS_MT_POSITION_X, ecodes.ABS_X):
+                        cur_x = value
+                    elif code in (ecodes.ABS_MT_POSITION_Y, ecodes.ABS_Y):
+                        cur_y = value
+
+            elif etype == ecodes.EV_SYN and code == ecodes.SYN_REPORT:
+                is_active = touch_down or slot0_active
+                if is_active and cur_x is not None and cur_y is not None:
+                    if last_x is not None and last_y is not None:
+                        dx = cur_x - last_x
+                        dy = cur_y - last_y
+
+                        # Filter out multi-finger switches or sudden coordinate jumps (>250 units)
+                        if abs(dx) < 250 and abs(dy) < 250 and (dx != 0 or dy != 0):
+                            with lock:
+                                mouse_rel_x += dx
+                                mouse_rel_y += dy
+                                if super_pressed and alt_pressed:
+                                    sign = -1 if read_inverted() else 1
+                                    acc_x += dx * speed * sign
+                                    acc_y += dy * speed * sign
+                                else:
+                                    acc_x = 0.0
+                                    acc_y = 0.0
+                    last_x = cur_x
+                    last_y = cur_y
+                elif not is_active:
+                    last_x = None
+                    last_y = None
+    finally:
+        print(f"[hypr-canvas] Device disconnected: {path}", flush=True)
+        try:
+            fd.close()
+        except Exception:
+            pass
+
+
 _active_kbd_threads = {}
 _active_mouse_threads = {}
+_active_touchpad_threads = {}
 
 def device_manager():
-    """Periodically scans /dev/input for new or reconnected keyboards and mice,
+    """Periodically scans /dev/input for new or reconnected keyboards, mice, and touchpads,
     spawning a reader thread for each."""
     WARMUP_DURATION = 20.0
     WARMUP_INTERVAL = 0.5
@@ -495,7 +592,7 @@ def device_manager():
 
     while True:
         try:
-            keyboards, mice = scan_devices()
+            keyboards, mice, touchpads = scan_devices()
 
             for path in keyboards:
                 t = _active_kbd_threads.get(path)
@@ -511,6 +608,14 @@ def device_manager():
                     nt = threading.Thread(target=mouse_reader_device, args=(path,), daemon=True)
                     nt.start()
                     _active_mouse_threads[path] = nt
+                    print(f"[hypr-canvas] Device detected: {path}", flush=True)
+
+            for path in touchpads:
+                t = _active_touchpad_threads.get(path)
+                if t is None or not t.is_alive():
+                    nt = threading.Thread(target=touchpad_reader_device, args=(path,), daemon=True)
+                    nt.start()
+                    _active_touchpad_threads[path] = nt
                     print(f"[hypr-canvas] Device detected: {path}", flush=True)
         except Exception as e:
             print(f"[hypr-canvas] Error in device_manager: {e}", flush=True)

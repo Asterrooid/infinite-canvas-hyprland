@@ -18,6 +18,7 @@ Transform your Hyprland desktop into a boundless whiteboard workspace with Figma
 
 ## 🚀 Features
 
+- 🖱️ **Dual Mouse & Touchpad Support**: Native Linux evdev handling for both relative mouse movement and absolute multi-touch laptop touchpads (Type B tracking) with automatic device discovery and hotplugging.
 - 🔍 **Figma/Miro Canvas Zoom**: Focal-point zoom in, zoom out, and reset centered directly on your mouse cursor.
 - ⚡ **Socket2 Auto-Capture Daemon**: Listens to Hyprland's IPC event stream in real time; summoning new apps while in Canvas Mode automatically formats them as cards and places them directly at your mouse cursor.
 - 🧠 **Persistent Canvas Layout Memory**: Custom window arrangements, coordinates, and card sizes are remembered across mode switches. Toggling to normal tiled mode (`SUPER + D`) and back restores your exact canvas layout without restarting.
@@ -33,7 +34,7 @@ Transform your Hyprland desktop into a boundless whiteboard workspace with Figma
 | Keybinding | Action | Description |
 | :--- | :--- | :--- |
 | `SUPER + D` | Toggle Tiled <-> Canvas | Flips between traditional tiled layout and Infinite Canvas with persistent placement memory |
-| `SUPER + ALT + Mouse Drag` | Pan Entire Canvas | Pan across the infinite canvas smoothly |
+| `SUPER + ALT + Mouse / Touchpad Drag` | Pan Entire Canvas | Pan across the infinite canvas smoothly |
 | `SUPER + Left Click Drag` | Drag Window | Drag floating window (viewport auto-pans at screen edges) |
 | `SUPER + CTRL + Scroll Up` | Canvas Zoom In | Focal zoom in centered directly on mouse cursor |
 | `SUPER + CTRL + Scroll Down` | Canvas Zoom Out | Focal zoom out centered directly on mouse cursor |
@@ -112,7 +113,7 @@ Install the required packages (`python3`, `python-evdev`, `bash`, `jq`):
   ```
 
 **Configure User Permissions**:
-Add your user account to the `input` group so the core daemon can read mouse gestures:
+Add your user account to the `input` group so the core daemon can read mouse and touchpad gestures:
 ```bash
 sudo usermod -aG input $USER
 ```
