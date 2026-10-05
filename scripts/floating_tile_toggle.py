@@ -10,10 +10,11 @@ import json
 import sys
 import os
 import fcntl
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hypr_ipc import (hyprctl_json, set_floating_lua, toggle_floating_lua, move_window_exact_lua,
-                      resize_window_exact_lua, batch, get_state_file_path)
+                      resize_window_exact_lua, batch, batch_async, get_state_file_path)
 
 
 def get_lock_file_path():
@@ -86,10 +87,10 @@ def switch_to_tiled(workspace_id, windows, state):
     positions = {}
     for w in windows:
         positions[w["address"]] = {
-            "x": w["at"][0],
-            "y": w["at"][1],
-            "w": w["size"][0],
-            "h": w["size"][1],
+            "x": int(w["at"][0]),
+            "y": int(w["at"][1]),
+            "w": int(w["size"][0]),
+            "h": int(w["size"][1]),
             "class": w.get("class", ""),
             "title": w.get("title", ""),
         }
@@ -116,63 +117,132 @@ def switch_to_canvas(workspace_id, windows, state):
     if tiled_windows:
         float_exprs = [set_floating_lua(w["address"], enabled=True) for w in tiled_windows]
         batch(float_exprs, timeout=5)
+        time.sleep(0.04)
 
     n_windows = len(windows)
     if n_windows == 0:
+        state[ws_key] = {
+            "mode": "canvas",
+            "positions": {}
+        }
+        save_state(state)
         return True
 
-    # 2. Compute "Zoom Out" non-overlapping Canvas Layout
+    ws_state = state.get(ws_key, {})
+    saved_positions = ws_state.get("positions", {})
+
+    restored = []
+    unplaced = []
+    for w in windows:
+        addr = w["address"]
+        if addr in saved_positions and isinstance(saved_positions[addr], dict):
+            restored.append((w, saved_positions[addr]))
+        else:
+            unplaced.append(w)
+
+    default_w = min(585, mon["w"] - 70)
+    default_h = min(520, mon["h"] - 140)
     layout_exprs = []
     positions = {}
 
-    if n_windows == 1:
-        card_w = min(960, mon["w"] - 100)
-        card_h = min(560, mon["h"] - 120)
-        x = mon["x"] + (mon["w"] - card_w) // 2
-        y = mon["y"] + (mon["h"] - card_h) // 2
-        w = windows[0]
-        layout_exprs.append(resize_window_exact_lua(card_w, card_h, w["address"]))
-        layout_exprs.append(move_window_exact_lua(x, y, w["address"]))
-        positions[w["address"]] = {"x": x, "y": y, "w": card_w, "h": card_h}
+    if restored:
+        for w, pos in restored:
+            addr = w["address"]
+            card_w = int(pos.get("w", default_w))
+            card_h = int(pos.get("h", default_h))
+            x = int(pos.get("x", mon["x"] + 35))
+            y = int(pos.get("y", mon["y"] + (mon["h"] - card_h) // 2))
 
-    elif n_windows == 2:
-        gap = 40
-        margin_x = 35
-        card_w = (mon["w"] - 2 * margin_x - gap) // 2
-        card_h = min(520, mon["h"] - 140)
-        margin_y = mon["y"] + (mon["h"] - card_h) // 2
+            layout_exprs.append(resize_window_exact_lua(card_w, card_h, addr))
+            layout_exprs.append(move_window_exact_lua(x, y, addr))
+            positions[addr] = {
+                "x": x,
+                "y": y,
+                "w": card_w,
+                "h": card_h,
+                "class": w.get("class", ""),
+                "title": w.get("title", "")
+            }
 
-        for idx, w in enumerate(windows):
-            x = mon["x"] + margin_x + idx * (card_w + gap)
-            y = margin_y
-            layout_exprs.append(resize_window_exact_lua(card_w, card_h, w["address"]))
-            layout_exprs.append(move_window_exact_lua(x, y, w["address"]))
-            positions[w["address"]] = {"x": x, "y": y, "w": card_w, "h": card_h}
+        if unplaced:
+            gap = 40
+            max_right = max(p["x"] + p["w"] for p in positions.values())
+            align_y = mon["y"] + (mon["h"] - default_h) // 2
 
+            for idx, w in enumerate(unplaced):
+                addr = w["address"]
+                x = max_right + gap + idx * (default_w + gap)
+                y = align_y
+                layout_exprs.append(resize_window_exact_lua(default_w, default_h, addr))
+                layout_exprs.append(move_window_exact_lua(x, y, addr))
+                positions[addr] = {
+                    "x": x,
+                    "y": y,
+                    "w": default_w,
+                    "h": default_h,
+                    "class": w.get("class", ""),
+                    "title": w.get("title", "")
+                }
+
+        msg = f"🚀 Canvas Mode restored for {n_windows} windows ({len(restored)} restored, {len(unplaced)} new)."
     else:
-        # 3 or more windows: Infinite strip layout with 2 apps visible on initial screen
-        gap = 40
-        margin_x = 35
-        card_w = (mon["w"] - 2 * margin_x - gap) // 2
-        card_h = min(520, mon["h"] - 140)
-        margin_y = mon["y"] + (mon["h"] - card_h) // 2
-
-        for idx, w in enumerate(windows):
-            x = mon["x"] + margin_x + idx * (card_w + gap)
-            y = margin_y
+        # Fallback to initial layout if no saved canvas arrangement exists
+        if n_windows == 1:
+            card_w = min(960, mon["w"] - 100)
+            card_h = min(560, mon["h"] - 120)
+            x = mon["x"] + (mon["w"] - card_w) // 2
+            y = mon["y"] + (mon["h"] - card_h) // 2
+            w = windows[0]
             layout_exprs.append(resize_window_exact_lua(card_w, card_h, w["address"]))
             layout_exprs.append(move_window_exact_lua(x, y, w["address"]))
-            positions[w["address"]] = {"x": x, "y": y, "w": card_w, "h": card_h}
+            positions[w["address"]] = {
+                "x": x, "y": y, "w": card_w, "h": card_h,
+                "class": w.get("class", ""), "title": w.get("title", "")
+            }
+        elif n_windows == 2:
+            gap = 40
+            margin_x = 35
+            card_w = (mon["w"] - 2 * margin_x - gap) // 2
+            card_h = min(520, mon["h"] - 140)
+            margin_y = mon["y"] + (mon["h"] - card_h) // 2
+            for idx, w in enumerate(windows):
+                x = mon["x"] + margin_x + idx * (card_w + gap)
+                y = margin_y
+                layout_exprs.append(resize_window_exact_lua(card_w, card_h, w["address"]))
+                layout_exprs.append(move_window_exact_lua(x, y, w["address"]))
+                positions[w["address"]] = {
+                    "x": x, "y": y, "w": card_w, "h": card_h,
+                    "class": w.get("class", ""), "title": w.get("title", "")
+                }
+        else:
+            gap = 40
+            margin_x = 35
+            card_w = (mon["w"] - 2 * margin_x - gap) // 2
+            card_h = min(520, mon["h"] - 140)
+            margin_y = mon["y"] + (mon["h"] - card_h) // 2
+            for idx, w in enumerate(windows):
+                x = mon["x"] + margin_x + idx * (card_w + gap)
+                y = margin_y
+                layout_exprs.append(resize_window_exact_lua(card_w, card_h, w["address"]))
+                layout_exprs.append(move_window_exact_lua(x, y, w["address"]))
+                positions[w["address"]] = {
+                    "x": x, "y": y, "w": card_w, "h": card_h,
+                    "class": w.get("class", ""), "title": w.get("title", "")
+                }
+        msg = f"🚀 Canvas Mode activated for {n_windows} windows (Initial layout applied)."
 
     if layout_exprs:
         batch(layout_exprs, timeout=5)
+        time.sleep(0.04)
+        reinforce_exprs = [move_window_exact_lua(pos["x"], pos["y"], addr) for addr, pos in positions.items()]
+        batch_async(reinforce_exprs)
 
     state[ws_key] = {
         "mode": "canvas",
         "positions": positions
     }
     save_state(state)
-    print(f"🚀 Canvas Mode activated for {n_windows} windows (Zoom-out layout applied).")
+    print(msg)
     return True
 
 

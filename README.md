@@ -20,9 +20,10 @@ Transform your Hyprland desktop into a boundless whiteboard workspace with Figma
 
 - 🔍 **Figma/Miro Canvas Zoom**: Focal-point zoom in, zoom out, and reset centered directly on your mouse cursor.
 - ⚡ **Socket2 Auto-Capture Daemon**: Listens to Hyprland's IPC event stream in real time; summoning new apps while in Canvas Mode automatically formats them as cards and places them directly at your mouse cursor.
+- 🧠 **Persistent Canvas Layout Memory**: Custom window arrangements, coordinates, and card sizes are remembered across mode switches. Toggling to normal tiled mode (`SUPER + D`) and back restores your exact canvas layout without restarting.
 - 📐 **Smart Strip Layout Engine**: Replaces messy overlapping window stacks with clean, non-overlapping horizontal card strips with 40px gaps.
 - 🖥️ **Fractional HiDPI Display Scaling**: Fixed monitor bounds calculation (`width/scale`, `height/scale`) for smooth panning on scaled laptop and 4K displays.
-- 🔄 **Instant Tiled <-> Canvas Toggle**: One key shortcut (`SUPER + D`) flips between traditional tiling and Infinite Canvas without losing your window layout.
+- 🔄 **Instant Tiled <-> Canvas Toggle**: One key shortcut (`SUPER + D`) flips between traditional tiling and Infinite Canvas with stateful placement memory and non-colliding placement for newly opened apps.
 - 🧭 **Center & Directional Navigation**: `SUPER + Arrow Keys` smoothly navigates focus and centers cards in your viewport.
 
 ---
@@ -31,7 +32,7 @@ Transform your Hyprland desktop into a boundless whiteboard workspace with Figma
 
 | Keybinding | Action | Description |
 | :--- | :--- | :--- |
-| `SUPER + D` | Toggle Tiled <-> Canvas | Flips between traditional tiled layout and Infinite Canvas strip |
+| `SUPER + D` | Toggle Tiled <-> Canvas | Flips between traditional tiled layout and Infinite Canvas with persistent placement memory |
 | `SUPER + ALT + Mouse Drag` | Pan Entire Canvas | Pan across the infinite canvas smoothly |
 | `SUPER + Left Click Drag` | Drag Window | Drag floating window (viewport auto-pans at screen edges) |
 | `SUPER + CTRL + Scroll Up` | Canvas Zoom In | Focal zoom in centered directly on mouse cursor |
@@ -190,6 +191,7 @@ Special thanks to **Sarods2D** for creating the foundational concept and initial
 This repository is an enhanced, independent evolution developed by **Asterrooid**, engineered to provide:
 - Figma/Miro-style focal cursor zoom (`canvas_zoom.py`)
 - Real-time Socket2 IPC cursor-targeted auto-capture daemon for dynamic card insertion
+- Persistent canvas layout memory across mode toggles with collision-free app placement (`floating_tile_toggle.py`)
 - Smart non-overlapping horizontal strip layout engine
 - Fractional HiDPI display scaling support for laptop and 4K displays
 - Native NixOS declarative and Flake architecture
